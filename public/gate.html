@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Греческий йогурт — 50 рецептов</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+:root{--paper:#0B0D1A;--ink:#fff;--soft:rgba(255,255,255,.72);--blue:#2745D4}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%}
+body{background:var(--paper);color:var(--ink);display:flex;align-items:center;
+  justify-content:center;padding:28px;text-align:center;
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  font-size:16px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.box{max-width:360px;width:100%}
+h1{font-size:26px;font-weight:700;letter-spacing:-.02em;line-height:1.15;margin:0 0 12px}
+p{margin:0 0 26px;color:var(--soft);font-size:15px;line-height:1.6}
+a.btn,button.btn{display:block;width:100%;border:0;border-radius:16px;padding:17px;
+  font-family:inherit;font-size:16px;font-weight:700;cursor:pointer;text-decoration:none;
+  background:#fff;color:#1B1F3B;margin-bottom:10px}
+button.ghost{background:transparent;color:var(--soft);font-weight:600;font-size:14px}
+button:disabled{opacity:.5}
+.spin{width:26px;height:26px;margin:0 auto;border:2.5px solid rgba(255,255,255,.22);
+  border-top-color:#fff;border-radius:50%;animation:r .8s linear infinite}
+@keyframes r{to{transform:rotate(360deg)}}
+.hide{display:none}
+</style>
+</head>
+<body>
+<div class="box">
+  <div id="loading"><div class="spin"></div></div>
+
+  <div id="gate" class="hide">
+    <h1>Гайд лежит в канале</h1>
+    <p>«Греческий йогурт — 50 рецептов». Подпишись на «А чё так вкусно?» — и открывай, он бесплатный.</p>
+    <a class="btn" id="subBtn" href="#">Подписаться на канал</a>
+    <button class="btn ghost" id="recheck">Я подписался</button>
+  </div>
+
+  <div id="fail" class="hide">
+    <h1 id="failTitle">Не открылось</h1>
+    <p id="failText"></p>
+    <button class="btn" id="retry">Попробовать ещё раз</button>
+  </div>
+</div>
+
+<script>
+(function(){
+  var tg = window.Telegram && Telegram.WebApp;
+  var $ = function(id){ return document.getElementById(id); };
+
+  function show(which){
+    ['loading','gate','fail'].forEach(function(id){
+      $(id).classList.toggle('hide', id !== which);
+    });
+  }
+
+  function fail(title, text){
+    $('failTitle').textContent = title;
+    $('failText').textContent = text;
+    show('fail');
+  }
+
+  if(!tg || !tg.initData){
+    fail('Открой через Telegram', 'Эта страница работает только внутри бота @chotakvkusno_bot.');
+    return;
+  }
+
+  tg.ready();
+  tg.expand();
+
+  function auth(){
+    show('loading');
+    fetch('/api/auth', {
+      method: 'POST',
+      headers: {'content-type': 'application/json'},
+      body: JSON.stringify({initData: tg.initData})
+    })
+    .then(function(r){ return r.json().then(function(j){ return {ok: r.ok, body: j}; }); })
+    .then(function(res){
+      if(!res.ok) throw new Error(res.body && res.body.error || 'сервер не ответил');
+
+      if(res.body.subscribed){
+        location.replace('/guide?t=' + encodeURIComponent(res.body.token));
+        return;
+      }
+
+      $('subBtn').href = res.body.channelUrl;
+      show('gate');
+    })
+    .catch(function(e){
+      fail('Не открылось', e.message);
+    });
+  }
+
+  $('subBtn').addEventListener('click', function(e){
+    // Внутри мини-аппа канал открываем родным способом, иначе — обычной ссылкой.
+    if(tg.openTelegramLink){
+      e.preventDefault();
+      tg.openTelegramLink(this.href);
+    }
+  });
+
+  $('recheck').addEventListener('click', auth);
+  $('retry').addEventListener('click', auth);
+
+  auth();
+})();
+</script>
+</body>
+</html>

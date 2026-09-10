@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Админка — А чё так вкусно?</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+:root{--paper:#F6F5F1;--card:#fff;--ink:#14161C;--soft:#6B6F7A;--blue:#2745D4;
+  --tint:#E7EBFC;--line:#E4E2DC;--warn:#C2410C}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0}
+body{background:var(--paper);color:var(--ink);font-size:15px;line-height:1.5;
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  -webkit-font-smoothing:antialiased}
+.wrap{max-width:720px;margin:0 auto;padding:calc(env(safe-area-inset-top) + 16px) 16px 56px}
+h1{font-size:24px;font-weight:700;letter-spacing:-.02em;margin:0 0 16px}
+h2{font-size:14px;font-weight:600;color:var(--soft);margin:28px 0 10px}
+.tabs{display:flex;gap:7px;margin-bottom:20px;overflow-x:auto;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{flex:none;padding:8px 15px;border-radius:999px;font-size:13.5px;font-weight:500;
+  background:var(--card);border:1px solid var(--line);cursor:pointer;white-space:nowrap;
+  font-family:inherit;color:inherit}
+.tab.on{background:var(--blue);border-color:var(--blue);color:#fff}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:11px}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px 17px}
+.stat b{display:block;font-size:27px;font-weight:700;letter-spacing:-.03em;line-height:1.1}
+.stat span{font-size:12.5px;color:var(--soft)}
+.stat.hot b{color:var(--warn)}
+table{width:100%;border-collapse:collapse;background:var(--card);
+  border:1px solid var(--line);border-radius:14px;overflow:hidden;font-size:14px}
+th,td{text-align:left;padding:10px 13px;border-bottom:1px solid var(--line)}
+th{font-size:12px;font-weight:600;color:var(--soft);text-transform:uppercase;letter-spacing:.04em}
+tr:last-child td{border-bottom:0}
+td.n{text-align:right;font-weight:600;color:var(--blue);white-space:nowrap}
+.bars{display:grid;gap:5px;background:var(--card);border:1px solid var(--line);
+  border-radius:14px;padding:14px}
+.bar{display:grid;grid-template-columns:74px 1fr 40px;align-items:center;gap:9px;font-size:12.5px}
+.bar i{font-style:normal;color:var(--soft)}
+.bar u{display:block;height:8px;border-radius:999px;background:var(--blue);min-width:2px;
+  text-decoration:none}
+.bar b{text-align:right;font-weight:600}
+.tk{background:var(--card);border:1px solid var(--line);border-radius:16px;
+  padding:15px 16px;margin-bottom:11px}
+.tk.new{border-color:var(--blue)}
+.tk-top{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;
+  color:var(--soft);margin-bottom:8px}
+.tk-msg{white-space:pre-wrap;word-break:break-word;margin:0 0 10px}
+.tk-ans{background:var(--tint);border-radius:10px;padding:10px 12px;font-size:13.5px;
+  white-space:pre-wrap;margin:0}
+.tk textarea{width:100%;min-height:74px;resize:vertical;padding:11px;border-radius:11px;
+  border:1px solid var(--line);font-family:inherit;font-size:14px;color:inherit}
+.tk textarea:focus{outline:none;border-color:var(--blue)}
+.tk button{margin-top:8px;background:var(--blue);color:#fff;border:0;border-radius:11px;
+  padding:11px 18px;font-family:inherit;font-size:14px;font-weight:600;cursor:pointer}
+.tk button:disabled{opacity:.5}
+.pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11.5px;font-weight:600}
+.pill.new{background:var(--tint);color:var(--blue)}
+.pill.answered{background:#E9EEE7;color:#3F6B33}
+.muted{color:var(--soft);font-size:14px}
+.hide{display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Админка</h1>
+  <div id="boot" class="muted">Проверяю доступ…</div>
+
+  <div id="app" class="hide">
+    <div class="tabs">
+      <button class="tab on" data-tab="overview">Сводка</button>
+      <button class="tab" data-tab="tickets">Обращения</button>
+      <button class="tab" data-tab="users">Люди</button>
+    </div>
+    <div id="overview"></div>
+    <div id="tickets" class="hide"></div>
+    <div id="users" class="hide"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  var tg = window.Telegram && Telegram.WebApp;
+  var $ = function(id){ return document.getElementById(id); };
+  var TOKEN = null;
+
+  function esc(s){
+    return String(s == null ? '' : s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+  function fmtDate(s){
+    var d = new Date(s);
+    return d.toLocaleString('ru-RU', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'});
+  }
+  function name(u){
+    if(u.username) return '@' + u.username;
+    return ((u.first_name || '') + ' ' + (u.last_name || '')).trim() || ('id ' + u.tg_id);
+  }
+
+  function get(path){
+    return fetch('/api/admin' + path, {headers:{authorization:'Bearer ' + TOKEN}})
+      .then(function(r){
+        if(!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      });
+  }
+  function post(path, body){
+    return fetch('/api/admin' + path, {
+      method:'POST',
+      headers:{'content-type':'application/json', authorization:'Bearer ' + TOKEN},
+      body: JSON.stringify(body)
+    }).then(function(r){
+      return r.json().then(function(j){
+        if(!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+        return j;
+      });
+    });
+  }
+
+  /* ---------- сводка ---------- */
+  function renderOverview(d){
+    var maxDay  = Math.max.apply(null, d.daily.map(function(x){ return x.users; }).concat([1]));
+    var maxView = Math.max.apply(null, d.topViews.map(function(x){ return x.n; }).concat([1]));
+    var conv = d.totals.users ? Math.round(d.totals.subscribed / d.totals.users * 100) : 0;
+
+    var html = '<div class="cards">' +
+      '<div class="stat"><b>' + d.totals.users + '</b><span>всего людей</span></div>' +
+      '<div class="stat"><b>' + d.totals.subscribed + '</b><span>подписаны · ' + conv + '%</span></div>' +
+      '<div class="stat"><b>' + d.totals.new_week + '</b><span>новых за неделю</span></div>' +
+      '<div class="stat' + (d.funnel.new ? ' hot' : '') + '"><b>' + d.funnel.new + '</b>' +
+        '<span>обращений без ответа</span></div>' +
+      '</div>';
+
+    html += '<h2>Активность, 14 дней</h2>';
+    if(!d.daily.length){
+      html += '<p class="muted">Пока пусто.</p>';
+    } else {
+      html += '<div class="bars">' + d.daily.map(function(x){
+        return '<div class="bar"><i>' + fmtDate(x.day).slice(0,5) + '</i>' +
+          '<u style="width:' + Math.round(x.users / maxDay * 100) + '%"></u>' +
+          '<b>' + x.users + '</b></div>';
+      }).join('') + '</div>';
+    }
+
+    html += '<h2>Что открывают, 30 дней</h2>';
+    if(!d.topViews.length){
+      html += '<p class="muted">Пока пусто.</p>';
+    } else {
+      html += '<div class="bars">' + d.topViews.map(function(x){
+        return '<div class="bar" style="grid-template-columns:1fr 90px 40px">' +
+          '<i style="color:var(--ink)">' + esc(x.title) + '</i>' +
+          '<u style="width:' + Math.round(x.n / maxView * 100) + '%"></u>' +
+          '<b>' + x.n + '</b></div>';
+      }).join('') + '</div>';
+    }
+
+    html += '<h2>Что ищут, 30 дней</h2>';
+    if(!d.topSearch.length){
+      html += '<p class="muted">Пока не искали.</p>';
+    } else {
+      html += '<table><tr><th>Запрос</th><th style="text-align:right">Раз</th></tr>' +
+        d.topSearch.map(function(x){
+          return '<tr><td>' + esc(x.q) + '</td><td class="n">' + x.n + '</td></tr>';
+        }).join('') + '</table>';
+    }
+
+    $('overview').innerHTML = html;
+  }
+
+  /* ---------- обращения ---------- */
+  function renderTickets(list){
+    if(!list.length){
+      $('tickets').innerHTML = '<p class="muted">Обращений пока нет.</p>';
+      return;
+    }
+    $('tickets').innerHTML = list.map(function(t){
+      var head = '<div class="tk-top"><span>#' + t.id + ' · ' + esc(name(t)) +
+        ' · ' + (t.source === 'miniapp' ? 'мини-апп' : 'бот') +
+        (t.topic ? ' · ' + esc(t.topic) : '') + '</span>' +
+        '<span><span class="pill ' + t.status + '">' +
+          (t.status === 'new' ? 'новое' : 'отвечено') + '</span> ' + fmtDate(t.created_at) +
+        '</span></div>';
+
+      var body = '<p class="tk-msg">' + esc(t.message) + '</p>';
+
+      var tail = t.answer
+        ? '<p class="tk-ans">' + esc(t.answer) + '</p>'
+        : '<textarea placeholder="Ответ уйдёт человеку в чат с ботом"></textarea>' +
+          '<button data-id="' + t.id + '">Ответить</button>';
+
+      return '<div class="tk ' + t.status + '">' + head + body + tail + '</div>';
+    }).join('');
+
+    $('tickets').querySelectorAll('button[data-id]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var ta = btn.parentNode.querySelector('textarea');
+        var answer = ta.value.trim();
+        if(answer.length < 2) return;
+        btn.disabled = true;
+        btn.textContent = 'Отправляю…';
+        post('/tickets/' + btn.dataset.id + '/reply', {answer: answer})
+          .then(function(){ load('tickets', true); })
+          .catch(function(e){
+            btn.disabled = false;
+            btn.textContent = 'Ответить';
+            alert('Не отправилось: ' + e.message);
+          });
+      });
+    });
+  }
+
+  /* ---------- люди ---------- */
+  function renderUsers(list){
+    if(!list.length){
+      $('users').innerHTML = '<p class="muted">Пока никого.</p>';
+      return;
+    }
+    $('users').innerHTML = '<table>' +
+      '<tr><th>Кто</th><th>Подписка</th><th>Был</th><th style="text-align:right">Обр.</th></tr>' +
+      list.map(function(u){
+        var sub = ['creator','administrator','member'].indexOf(u.sub_status) > -1 ? 'да' : 'нет';
+        return '<tr><td>' + esc(name(u)) + '</td>' +
+          '<td>' + sub + '</td>' +
+          '<td>' + fmtDate(u.last_seen_at) + '</td>' +
+          '<td class="n">' + u.tickets + '</td></tr>';
+      }).join('') + '</table>';
+  }
+
+  /* ---------- загрузка вкладок ---------- */
+  var loaded = {};
+  function load(tab, force){
+    if(loaded[tab] && !force) return;
+    loaded[tab] = true;
+    if(tab === 'overview') get('/overview').then(renderOverview).catch(oops);
+    if(tab === 'tickets')  get('/tickets').then(function(d){ renderTickets(d.tickets); }).catch(oops);
+    if(tab === 'users')    get('/users').then(function(d){ renderUsers(d.users); }).catch(oops);
+  }
+  function oops(e){
+    $('boot').classList.remove('hide');
+    $('boot').textContent = 'Не загрузилось: ' + e.message;
+  }
+
+  document.querySelectorAll('.tab').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      document.querySelectorAll('.tab').forEach(function(b){ b.classList.remove('on'); });
+      btn.classList.add('on');
+      ['overview','tickets','users'].forEach(function(id){
+        $(id).classList.toggle('hide', id !== btn.dataset.tab);
+      });
+      load(btn.dataset.tab, btn.dataset.tab === 'tickets');
+    });
+  });
+
+  /* ---------- вход ---------- */
+  if(!tg || !tg.initData){
+    $('boot').textContent = 'Открой админку через бота: команда /admin.';
+    return;
+  }
+  tg.ready();
+  tg.expand();
+
+  fetch('/api/auth', {
+    method:'POST',
+    headers:{'content-type':'application/json'},
+    body: JSON.stringify({initData: tg.initData})
+  })
+  .then(function(r){ return r.json(); })
+  .then(function(d){
+    if(!d.token || !d.admin){
+      $('boot').textContent = 'Этот аккаунт не в списке админов.';
+      return;
+    }
+    TOKEN = d.token;
+    $('boot').classList.add('hide');
+    $('app').classList.remove('hide');
+    load('overview');
+  })
+  .catch(oops);
+})();
+</script>
+</body>
+</html>

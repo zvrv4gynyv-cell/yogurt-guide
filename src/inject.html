@@ -1,0 +1,141 @@
+<style>
+.ask-form{display:grid;gap:14px;margin-top:22px}
+.ask-topics{display:flex;flex-wrap:wrap;gap:7px}
+.ask-topics label{padding:8px 14px;border-radius:999px;font-size:13px;font-weight:500;
+  background:var(--card);border:1px solid var(--line);cursor:pointer}
+.ask-topics input{position:absolute;opacity:0;pointer-events:none}
+.ask-topics input:checked + span{color:#fff}
+.ask-topics label:has(input:checked){background:var(--blue);border-color:var(--blue);color:#fff}
+.ask-form textarea{width:100%;min-height:140px;resize:vertical;padding:15px;
+  border:1px solid var(--line);border-radius:14px;background:var(--card);color:var(--ink);
+  font-family:inherit;font-size:15px;line-height:1.5}
+.ask-form textarea:focus{outline:none;border-color:var(--blue)}
+.ask-send{background:var(--blue);color:#fff;border:0;border-radius:14px;padding:16px;
+  font-family:inherit;font-size:16px;font-weight:700;cursor:pointer}
+.ask-send:disabled{opacity:.5}
+.ask-note{margin:4px 0 0;font-size:13.5px;line-height:1.55;color:var(--ink-soft)}
+.ask-note.ok{color:var(--blue);font-weight:600}
+.ask-note.err{color:#C2410C;font-weight:600}
+</style>
+
+<section class="page" id="ask">
+  <a class="back" href="#menu"><svg viewBox="0 0 24 24"><path d="m15 19-7-7 7-7"/></svg> Разделы</a>
+  <div class="wrap">
+    <div class="sec-head">
+      <h2>Написать нам</h2>
+      <p>Вопрос по рецепту, нашли ошибку или хочется того, чего в гайде нет.</p>
+    </div>
+    <form class="ask-form" id="askForm">
+      <div class="ask-topics">
+        <label><input type="radio" name="topic" value="recipe" checked><span>Вопрос по рецепту</span></label>
+        <label><input type="radio" name="topic" value="bug"><span>Нашёл ошибку</span></label>
+        <label><input type="radio" name="topic" value="idea"><span>Хочу рецепт</span></label>
+        <label><input type="radio" name="topic" value="other"><span>Другое</span></label>
+      </div>
+      <textarea id="askText" maxlength="2000" placeholder="Например: заменила греческий на обычный — соус потёк. Что не так?"></textarea>
+      <button class="ask-send" type="submit">Отправить</button>
+      <p class="ask-note" id="askNote">Ответ придёт в чат с ботом.</p>
+    </form>
+    <div style="height:44px"></div>
+  </div>
+</section>
+
+<script>
+(function(){
+  var S = new URLSearchParams(location.search).get('t');
+  try { if(S) sessionStorage.setItem('yg_s', S); else S = sessionStorage.getItem('yg_s'); } catch(e) {}
+  if(!S) return;
+
+  function api(path, body){
+    return fetch(path, {
+      method: 'POST',
+      headers: {'content-type':'application/json','authorization':'Bearer ' + S},
+      body: JSON.stringify(body),
+      keepalive: true
+    });
+  }
+
+  /* --- плитка «Написать нам» в меню --- */
+  var grid = document.getElementById('menuGrid');
+  if(grid){
+    var a = document.createElement('a');
+    a.className = 'mi';
+    a.href = '#ask';
+    a.innerHTML = '<div class="mi-txt"><h3>Написать нам</h3>' +
+      '<p>Вопрос по рецепту, ошибка или заявка на новый</p></div>';
+    grid.appendChild(a);
+  }
+
+  /* --- отправка обращения --- */
+  var form = document.getElementById('askForm');
+  var text = document.getElementById('askText');
+  var note = document.getElementById('askNote');
+  var btn  = form.querySelector('.ask-send');
+
+  form.addEventListener('submit', function(e){
+    e.preventDefault();
+    var msg = text.value.trim();
+    if(msg.length < 5){
+      note.className = 'ask-note err';
+      note.textContent = 'Напиши чуть подробнее — так я пойму, чем помочь.';
+      return;
+    }
+    var topic = (form.querySelector('input[name=topic]:checked') || {}).value || 'other';
+    btn.disabled = true;
+    note.className = 'ask-note';
+    note.textContent = 'Отправляю…';
+
+    api('/api/tickets', {topic: topic, message: msg, context: lastView})
+      .then(function(r){ return r.json().then(function(j){ return {ok: r.ok, body: j}; }); })
+      .then(function(res){
+        if(!res.ok) throw new Error(res.body && res.body.error || 'ошибка');
+        note.className = 'ask-note ok';
+        note.textContent = 'Записали. Ответ придёт в чат с ботом.';
+        text.value = '';
+      })
+      .catch(function(err){
+        note.className = 'ask-note err';
+        note.textContent = 'Не отправилось: ' + err.message + '. Попробуй ещё раз.';
+      })
+      .finally(function(){ btn.disabled = false; });
+  });
+
+  /* --- аналитика: что открывают --- */
+  var queue = [];
+  var lastView = location.hash || '#cover';
+
+  function track(type, payload){
+    queue.push({type: type, payload: payload || {}, at: Date.now()});
+    if(queue.length >= 20) flush();
+  }
+  function flush(){
+    if(!queue.length) return;
+    var batch = queue.splice(0, queue.length);
+    api('/api/events', {events: batch}).catch(function(){ /* аналитика не должна ломать гайд */ });
+  }
+
+  track('open_app', {});
+  window.addEventListener('hashchange', function(){
+    lastView = location.hash || '#cover';
+    var title = (document.querySelector(lastView + ' h2') || {}).textContent || '';
+    track('view', {id: lastView, title: title.trim().slice(0, 120)});
+  });
+
+  var q = document.getElementById('q');
+  if(q){
+    var t;
+    q.addEventListener('input', function(){
+      clearTimeout(t);
+      var v = this.value.trim();
+      if(v.length < 3) return;
+      t = setTimeout(function(){ track('search', {q: v.slice(0, 80)}); }, 900);
+    });
+  }
+
+  setInterval(flush, 15000);
+  document.addEventListener('visibilitychange', function(){
+    if(document.visibilityState === 'hidden') flush();
+  });
+  window.addEventListener('pagehide', flush);
+})();
+</script>

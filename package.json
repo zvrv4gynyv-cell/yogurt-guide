@@ -1,0 +1,15 @@
+{
+  "name": "yogurt-guide",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Telegram Mini App: гайд «Греческий йогурт — 50 рецептов» + бот с гейтом по подписке",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "pg": "^8.13.1"
+  }
+}
