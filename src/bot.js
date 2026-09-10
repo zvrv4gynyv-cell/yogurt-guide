@@ -100,14 +100,8 @@ async function forwardToAdmin(ticket) {
 
 async function handleAdminReply(msg) {
   const ticket = await findTicketByAdminMessage(msg.chat.id, msg.reply_to_message.message_id);
-  if (!ticket) {
-    await callApi('sendMessage', {
-      chat_id: msg.chat.id,
-      text: 'Не нашёл обращение для этого сообщения. Ответь реплаем именно на карточку обращения.',
-      reply_to_message_id: msg.message_id,
-    });
-    return;
-  }
+  // Реплай не на карточку обращения — это обычная переписка в чате, молчим.
+  if (!ticket) return;
   const text = msg.text || msg.caption;
   if (!text) return;
 
@@ -132,6 +126,8 @@ async function handleAdminReply(msg) {
 }
 
 async function handleMessage(msg) {
+  // Посты от имени канала и служебные сообщения нам не интересны.
+  if (!msg.from) return;
   const text = msg.text || '';
 
   if (text.startsWith('/id')) {
