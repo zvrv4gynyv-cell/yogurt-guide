@@ -172,14 +172,16 @@ async function handleMessage(msg) {
     return;
   }
 
-  // В админ-чате обычные сообщения игнорируем
-  if (isAdminChat(msg.chat.id)) return;
+  // Групповые чаты дальше не идут: там бот только принимает ответы на обращения.
   if (msg.chat.type !== 'private') return;
 
   if (text.startsWith('/start')) {
     await handleStart(msg, text.split(' ')[1] || null);
     return;
   }
+
+  // Админ-чатом может быть личка владельца — не заводим обращения на его же сообщения.
+  if (isAdminChat(msg.chat.id)) return;
 
   await handleUserMessage(msg);
 }
