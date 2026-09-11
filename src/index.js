@@ -67,8 +67,12 @@ app.get('/admin', page('admin.html'));
 app.use((req, res) => res.status(404).type('text').send('не найдено'));
 
 app.use((err, req, res, _next) => {
-  console.error('server error:', err.stack || err.message);
   if (res.headersSent) return;
+  // Кривое тело запроса — это не наша авария.
+  if (err instanceof SyntaxError && err.status === 400) {
+    return res.status(400).json({ error: 'тело запроса не разобрать' });
+  }
+  console.error('server error:', err.stack || err.message);
   res.status(500).json({ error: 'что-то сломалось на сервере' });
 });
 
